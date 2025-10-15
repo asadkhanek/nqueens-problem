@@ -3,17 +3,19 @@ name: Deploy N-Queens Visualizer
 on:
   push:
     branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
   pages: write
   id-token: write
 
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
 jobs:
-  build-and-test:
+  build:
     runs-on: ubuntu-latest
     
     steps:
@@ -24,88 +26,36 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: '18'
-        cache: 'npm'
         
-    - name: Install root dependencies
-      run: npm install
-      
     - name: Install frontend dependencies
       working-directory: ./frontend
       run: npm install
       
-    - name: Install backend dependencies
-      working-directory: ./backend
-      run: npm install
-      
-    - name: Build frontend
+    - name: Build frontend for GitHub Pages
       working-directory: ./frontend
       env:
         GITHUB_PAGES: true
       run: npm run build
       
-    - name: Upload frontend build artifacts
-      uses: actions/upload-artifact@v4
+    - name: Add .nojekyll file
+      run: touch frontend/dist/.nojekyll
+      
+    - name: Setup Pages
+      uses: actions/configure-pages@v4
+      
+    - name: Upload artifact
+      uses: actions/upload-pages-artifact@v3
       with:
-        name: frontend-build
-        path: frontend/dist
-        retention-days: 7
+        path: './frontend/dist'
         
-  deploy-frontend:
-    needs: build-and-test
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    needs: build
     
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Download build artifacts
-      uses: actions/download-artifact@v4
-      with:
-        name: frontend-build
-        path: frontend/dist
-        
     - name: Deploy to GitHub Pages
-      uses: peaceiris/actions-gh-pages@v3
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_dir: ./frontend/dist
-        cname: # Add your custom domain here if you have one
-        
-  docker-build:
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-      
-    - name: Login to Docker Hub
-      uses: docker/login-action@v3
-      with:
-        username: ${{ secrets.DOCKER_USERNAME }}
-        password: ${{ secrets.DOCKER_PASSWORD }}
-      continue-on-error: true
-      
-    - name: Build and push frontend image
-      uses: docker/build-push-action@v5
-      with:
-        context: ./frontend
-        push: ${{ secrets.DOCKER_USERNAME != '' }}
-        tags: ${{ secrets.DOCKER_USERNAME }}/n-queens-frontend:latest
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
-      continue-on-error: true
-        
-    - name: Build and push backend image
-      uses: docker/build-push-action@v5
-      with:
-        context: ./backend
-        push: ${{ secrets.DOCKER_USERNAME != '' }}
-        tags: ${{ secrets.DOCKER_USERNAME }}/n-queens-backend:latest
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
-      continue-on-error: true
+      id: deployment
+      uses: actions/deploy-pages@v4
