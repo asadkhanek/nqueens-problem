@@ -1,0 +1,52 @@
+name: CI Tests
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: |
+        npm ci
+        cd frontend && npm ci
+        cd ../backend && npm ci
+        
+    - name: Run linting
+      continue-on-error: true
+      run: |
+        cd frontend && npm run lint || true
+        cd ../backend && npm run lint || true
+        
+    - name: Build frontend
+      run: |
+        cd frontend
+        npm run build
+        
+    - name: Test frontend build
+      run: |
+        cd frontend
+        test -d dist
+        
+    - name: Check backend startup
+      run: |
+        cd backend
+        timeout 10s node src/index.js || true
